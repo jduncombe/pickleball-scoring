@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test -- --ci
+
+  android:
+    # A release APK (signed with the debug key) to sideload onto test tablets.
+    # Store builds go through EAS: see the README.
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      # Compile C++ through ccache in every CMake project (React Native and Expo modules).
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_COMPILERCHECK: content
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      # Caches Gradle dependencies, wrapper and build cache. By default only the
+      # default branch writes the cache; let branches and PRs write it too, so
+      # their second build onwards is warm.
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: android-${{ hashFiles('package-lock.json') }}
+          restore-keys: android-
+          max-size: 2G
+      - run: npm ci
+      - run: npx expo prebuild --platform android --no-install
+      - run: ./gradlew assembleRelease --no-daemon --build-cache
+        working-directory: android
+      - run: ccache --show-stats
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pickleball-scoring-apk
+          path: android/app/build/outputs/apk/release/*.apk
