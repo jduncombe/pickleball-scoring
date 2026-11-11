@@ -22,6 +22,11 @@ jobs:
     # Store builds go through EAS: see the README.
     needs: test
     runs-on: ubuntu-latest
+    env:
+      # Compile C++ through ccache in every CMake project (React Native and Expo modules).
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_COMPILERCHECK: content
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,11 +37,22 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+      # Caches Gradle dependencies, wrapper and build cache. By default only the
+      # default branch writes the cache; let branches and PRs write it too, so
+      # their second build onwards is warm.
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: android-${{ hashFiles('package-lock.json') }}
+          restore-keys: android-
+          max-size: 2G
       - run: npm ci
       - run: npx expo prebuild --platform android --no-install
-      - run: ./gradlew assembleRelease --no-daemon
+      - run: ./gradlew assembleRelease --no-daemon --build-cache
         working-directory: android
+      - run: ccache --show-stats
       - uses: actions/upload-artifact@v4
         with:
           name: pickleball-scoring-apk
